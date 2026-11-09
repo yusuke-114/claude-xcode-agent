@@ -1,103 +1,91 @@
 # claude-xcode-agent
 
-Use Claude Code as the coding agent in Xcode 26, powered by your own API key or gateway.
+Run Claude Code as an Xcode 26 agent, with your own API key or gateway.
 
-Xcode 26's Intelligence features can connect to external agents through ACP (Agent Client Protocol).
-This tool wraps Claude Code as an ACP agent that Xcode can call directly, and:
+Xcode 26 talks to external coding agents over ACP (Agent Client Protocol). Claude Code doesn't speak ACP, so an adapter (`claude-agent-acp`) sits in between. Two things get in the way:
 
-- **Works with your own gateway**: `base_url` + `auth_token` / `api_key`. The official API and any Anthropic-compatible gateway both work
-- **Leaves your global config alone**: `~/.claude/settings.json` is not read by default; config lives only in `config.json` in this directory
-- **Brings your own MCP servers**: `mcp_servers` are merged with the MCP servers Xcode provides and passed to claude
-- **Installs locally**: the ACP adapter goes into `.runtime/`, not a global location. Delete the directory to uninstall
-- **Easy to debug**: logs go to `.runtime/agent.log`, and you can optionally record the protocol messages between Xcode and the adapter
+- Xcode launches agents from the GUI, so there is no shell environment to carry a gateway URL or API key.
+- The adapter always starts `claude` with `--setting-sources user,project,local`, which pulls in `~/.claude/settings.json` whether you want it or not.
 
-Requirements: macOS with Xcode 26 or later. `setup.sh` installs Node.js and Claude Code if they're missing.
+This project fixes both without patching the adapter. A single script, `claude-acp.sh`, is launched twice and plays a different role each time.
 
-## Quick start
+## How it works
 
-**Step 1. Clone and install**
+```mermaid
+sequenceDiagram
+    participant X as Xcode
+    participant S1 as claude-acp.sh<br/>pass 1: agent
+    participant A as ACP adapter
+    participant S2 as claude-acp.sh<br/>pass 2: claude
+    participant C as claude
+
+    X->>S1: launch
+    Note over S1: read config.json<br/>export credentials<br/>CLAUDE_CODE_EXECUTABLE = self
+    S1->>A: exec
+    X-->>A: ACP over stdio
+    A->>S2: spawn "claude" --setting-sources user,project,local
+    Note over S2: CLAUDE_ACP_AS_CLI=1<br/>drop --setting-sources<br/>add --mcp-config
+    S2->>C: exec claude --setting-sources project,local
+```
+
+**Pass 1, as the agent.** Xcode launches `claude-acp.sh`. It reads `config.json`, exports the credentials, points `CLAUDE_CODE_EXECUTABLE` at itself, and `exec`s the adapter. From then on Xcode talks ACP to the adapter directly.
+
+**Pass 2, as claude.** When a session starts, the adapter spawns what it believes is the Claude Code binary. That is `claude-acp.sh` again, now with `CLAUDE_ACP_AS_CLI=1`. It drops the adapter's `--setting-sources`, adds your MCP servers next to the ones Xcode passed, and `exec`s the real `claude`.
+
+Both passes end in `exec`, so no wrapper process is left running and stdout stays a clean ACP channel.
+
+## Setup
 
     git clone https://github.com/yusuke-114/claude-xcode-agent.git
     cd claude-xcode-agent
     ./setup.sh
 
-At the end, setup prints the absolute path of `claude-acp.sh`. You'll need it in step 3.
+`setup.sh` installs Node.js and Claude Code if they're missing, installs the adapter into `.runtime/`, checks it with an ACP `initialize` handshake, and prints the path for Xcode.
 
-**Step 2. Create your config file** (skip this step if `claude` is already logged in and you want to use that login)
+To use a gateway or API key, create a config. Without one, `claude` uses its own login.
 
-    cp config.example.json config.json
-    chmod 600 config.json
+    cp config.example.json config.json && chmod 600 config.json
 
-Open `config.json` and fill in your values:
-
-    {
-      "base_url": "https://your-gateway.example.com",
-      "auth_token": "your-api-key",
-      "model": "claude-opus-5-5"
-    }
-
-- Calling the Anthropic API directly: delete `base_url` and `auth_token`, and set `"api_key": "your-api-key"`.
-- Going through a gateway or proxy: set `base_url` (without `/v1/messages`) and `auth_token`.
-- Fields you don't need can be deleted. See [Configuration](#configuration) for every field.
-
-**Step 3. Add the agent in Xcode**
-
-Open **Xcode › Settings › Intelligence › Add an Agent…** and enter:
+Then add the agent in **Xcode › Settings › Intelligence › Add an Agent…**
 
 | Field | Value |
 |---|---|
 | Name | Claude |
-| Executable | The absolute path to `claude-acp.sh` printed by setup |
-| Interpreter | Leave empty |
+| Executable | the `claude-acp.sh` path printed by setup |
+| Interpreter | empty |
 
-**Step 4. Use it**
+If you move this directory, run `./setup.sh` again and update the path in Xcode.
 
-Open the coding assistant in Xcode, pick **Claude**, and ask something about your project.
-If nothing happens, see [Troubleshooting](#troubleshooting).
+## config.json
 
-If you move this directory, run `./setup.sh` again and update the Executable path in Xcode.
-
-## Configuration
-The config file is optional. Without `config.json`, claude uses its existing login.
-
-| Field | Purpose |
+| Field | |
 |---|---|
-| base_url | Gateway URL, without `/v1/messages` |
-| auth_token | Sent as `Authorization: Bearer` |
-| api_key | Sent as `x-api-key` (use either this or auth_token) |
-| model | Default model in Xcode |
-| setting_sources | Which settings layers claude reads. The default is `project,local` (skips `~/.claude/settings.json`). Use `user,project,local` to read all of them |
-| mcp_servers | Local MCP servers, passed to claude with `--mcp-config` (doesn't depend on `~/.claude.json`); see the example below |
-| env | Extra environment variables, passed to claude unchanged |
+| `base_url` | gateway URL, without `/v1/messages` |
+| `auth_token` | sent as `Authorization: Bearer` |
+| `api_key` | sent as `x-api-key`; use this or `auth_token` |
+| `model` | default model |
+| `setting_sources` | default `project,local`; set `user,project,local` to also read `~/.claude/settings.json` |
+| `mcp_servers` | extra MCP servers, merged with Xcode's |
+| `env` | extra environment variables for `claude` |
 
-Effort, permission mode and allowed tools are controlled by Xcode, so they aren't configured here.
+Effort, permission mode and allowed tools come from Xcode.
 
-Credentials are passed to claude as environment variables, and `mcp_servers` is written to
-`.runtime/mcp.json` with mode 0600, so neither appears on the command line.
-
-mcp_servers example (stdio):
+Credentials travel as environment variables, and `mcp_servers` is written to `.runtime/mcp.json` (mode 0600), so neither shows up in `ps`.
 
     "mcp_servers": {
-      "my-tool": { "command": "/absolute/path/to/server", "args": ["--stdio"], "env": {} }
+      "my-tool": { "command": "/absolute/path/to/server", "args": ["--stdio"] }
     }
 
-## How it works
-The ACP adapter hardcodes `--setting-sources` to `user,project,local`. To change that,
-`claude-acp.sh` sets `CLAUDE_CODE_EXECUTABLE` so the adapter calls the script back.
-When called as claude (`CLAUDE_ACP_AS_CLI=1`), the script replaces that flag, appends `mcp_servers`,
-and then runs the real claude.
+## Debugging
 
-    Xcode ──ACP──▶ claude-acp.sh ──▶ ACP adapter ──▶ claude-acp.sh (as claude) ──▶ claude
+Xcode doesn't show adapter errors anywhere, so they go to `.runtime/agent.log`, along with one line per session.
 
-stdout is the ACP protocol channel, so all of the script's own messages go to stderr.
-
-## Troubleshooting
-- Logs: `.runtime/agent.log`. Adapter errors are only sent to Xcode and never shown in its UI, so they're written here.
-- Protocol messages: after `touch .runtime/debug`, messages between Xcode and the adapter are written to `.runtime/debug.in.log` / `debug.out.log`.
-  **They contain your conversation. Delete `debug` and both logs when you're done.**
+To capture raw ACP traffic, `touch .runtime/debug`. Messages are written to `.runtime/debug.in.log` and `.runtime/debug.out.log`. These contain your conversation, so delete them when you're done.
 
 ## Uninstall
-Delete `.runtime/` and remove the agent in Xcode.
+
+Remove the agent in Xcode, then delete this directory.
 
 ## License
+
 [MIT](LICENSE)
