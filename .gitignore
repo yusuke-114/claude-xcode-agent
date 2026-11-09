@@ -1,0 +1,7 @@
+# Local config with your key
+config.json
+
+# Adapter install, logs, and debug captures
+.runtime/
+
+.DS_Store
