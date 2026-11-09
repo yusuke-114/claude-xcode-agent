@@ -1,6 +1,6 @@
 # claude-xcode-agent
 
-Claude Code as an Xcode 26 agent, using your own API key or gateway.
+Claude Code as an Xcode 27 agent, using your own API key or gateway.
 
 ## Design
 
