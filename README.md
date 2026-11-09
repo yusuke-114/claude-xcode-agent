@@ -24,6 +24,8 @@ flowchart LR
 
 Both steps `exec`, so no wrapper process stays alive and stdout stays pure ACP.
 
+① runs once per agent launch, ② once per session. Messages within a session go straight to the running `claude`.
+
 ## Run
 
 ```sh
