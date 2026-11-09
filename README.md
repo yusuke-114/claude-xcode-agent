@@ -4,12 +4,12 @@ Claude Code as an Xcode 27 agent, using your own API key or gateway.
 
 ## Design
 
-Xcode talks to agents over ACP, and an adapter (`claude-agent-acp`) bridges ACP to Claude Code. Two problems:
+Xcode talks to agents over ACP, and an adapter (`claude-agent-acp`) bridges ACP to Claude Code. Used on its own, the adapter has two problems:
 
 - Xcode starts the agent from the GUI, so there's no shell env to hold a key or gateway URL.
-- The adapter hardcodes `claude --setting-sources user,project,local`, so `~/.claude/settings.json` always leaks in.
+- The adapter hardcodes `claude --setting-sources user,project,local`, so your global `~/.claude/settings.json` gets applied to Xcode too.
 
-`claude-acp.sh` fixes both by running twice in two roles:
+`claude-acp.sh` fixes both: the key and gateway come from `config.json`, and `~/.claude/settings.json` is not read unless you opt in with `setting_sources`. It does this by running twice in two roles:
 
 ```mermaid
 flowchart LR
