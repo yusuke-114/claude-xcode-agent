@@ -13,10 +13,12 @@ Xcode talks to agents over ACP, and an adapter (`claude-agent-acp`) bridges ACP 
 
 ```mermaid
 flowchart LR
-    X[Xcode] -- ACP --> S1["claude-acp.sh<br/>① as agent"]
-    S1 -- exec --> A[ACP adapter]
-    A -- "spawns claude" --> S2["claude-acp.sh<br/>② as claude"]
-    S2 -- exec --> C[claude]
+    X[Xcode] -- "launch<br/>once" --> S1["claude-acp.sh<br/>① as agent"]
+    S1 -- exec --> A["ACP adapter<br/>long-lived"]
+    A -- "spawn claude<br/>once per session" --> S2["claude-acp.sh<br/>② as claude"]
+    S2 -- exec --> C["claude<br/>one per session"]
+    X -. "ACP messages" .-> A
+    A -. "session messages" .-> C
 ```
 
 1. **As agent**: loads `config.json` into env, points `CLAUDE_CODE_EXECUTABLE` at itself, execs the adapter.
