@@ -82,13 +82,13 @@ If your gateway names models differently, map the aliases with `env`:
 
 ### MCP servers
 
-`mcp_servers` uses the same format as Claude Code's `mcpServers`. They're added alongside the servers Xcode provides.
+`mcp_servers` uses the same format as Claude Code's `mcpServers`. They're added alongside the servers Xcode provides. Each key is a name you choose. The example below shows a local server (started as a process) and a remote one (reached over HTTP).
 
 ```json
 {
   "mcp_servers": {
-    "my-tool": { "command": "/absolute/path/to/server", "args": ["--stdio"], "env": { "TOKEN": "..." } },
-    "docs": { "type": "http", "url": "https://mcp.example.com/mcp", "headers": { "Authorization": "Bearer ..." } }
+    "my-local-server": { "command": "/absolute/path/to/server", "args": ["--stdio"], "env": { "TOKEN": "..." } },
+    "my-remote-server": { "type": "http", "url": "https://mcp.example.com/mcp", "headers": { "Authorization": "Bearer ..." } }
   }
 }
 ```
@@ -98,7 +98,7 @@ Use absolute paths, since Xcode doesn't start the agent with your shell's PATH. 
 ### Other fields
 
 - `setting_sources`: defaults to `project,local`. Set `user,project,local` to also load `~/.claude/settings.json`.
-- `env`: any extra environment variables for `claude`.
+- `env`: environment variables passed to `claude` as-is, for anything the fields above don't cover (e.g. `HTTPS_PROXY`). Xcode doesn't start the agent with your shell's env, so set them here. `base_url`, `auth_token`, `api_key` and `model` already become `ANTHROPIC_*` variables, so don't repeat them here.
 
 ## License
 
